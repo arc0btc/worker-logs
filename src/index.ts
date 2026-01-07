@@ -4,11 +4,16 @@ import { Ok, Err, ErrorCode } from './result'
 import type { Env, LogInput, LogBatchInput } from './types'
 import * as registry from './services/registry'
 import * as stats from './services/stats'
+import { requireApiKey } from './middleware/auth'
 
 // Re-export AppLogsDO for wrangler to find
 export { AppLogsDO } from './durable-objects/app-logs-do'
 
-const app = new Hono<{ Bindings: Env }>()
+type Variables = {
+  appId: string
+}
+
+const app = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 app.use('*', cors())
 
@@ -43,13 +48,9 @@ app.get('/', (c) => {
   )
 })
 
-// POST /logs - Write log(s)
-app.post('/logs', async (c) => {
-  const appId = c.req.header('X-App-ID')
-  if (!appId) {
-    return c.json(Err({ code: ErrorCode.BAD_REQUEST, message: 'X-App-ID header required' }), 400)
-  }
-
+// POST /logs - Write log(s) (requires API key)
+app.post('/logs', requireApiKey, async (c) => {
+  const appId = c.get('appId')
   const body = await c.req.json<LogInput | LogBatchInput>()
   const stub = getAppDO(c.env, appId)
 
@@ -94,13 +95,9 @@ app.post('/logs', async (c) => {
   }
 })
 
-// GET /logs - Query logs
-app.get('/logs', async (c) => {
-  const appId = c.req.header('X-App-ID')
-  if (!appId) {
-    return c.json(Err({ code: ErrorCode.BAD_REQUEST, message: 'X-App-ID header required' }), 400)
-  }
-
+// GET /logs - Query logs (requires API key)
+app.get('/logs', requireApiKey, async (c) => {
+  const appId = c.get('appId')
   const stub = getAppDO(c.env, appId)
   const url = new URL(c.req.url)
 
@@ -209,7 +206,7 @@ app.post('/apps', async (c) => {
   return c.json(Ok(result.data), 201)
 })
 
-// GET /apps/:app_id - Get app details
+// GET /apps/:app_id - Get app details (excludes API key for security)
 app.get('/apps/:app_id', async (c) => {
   const appId = c.req.param('app_id')
 
@@ -226,7 +223,9 @@ app.get('/apps/:app_id', async (c) => {
     return c.json(Err({ code: ErrorCode.NOT_FOUND, message: `App '${appId}' not found` }), 404)
   }
 
-  return c.json(Ok(result.data))
+  // Don't expose API key in public endpoint
+  const { api_key: _, ...safeData } = result.data
+  return c.json(Ok(safeData))
 })
 
 // DELETE /apps/:app_id - Delete an app
