@@ -1,7 +1,9 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { Ok, Err, ErrorCode, getErrorStatus } from './result'
+import { Ok, Err, ErrorCode } from './result'
 import type { Env, LogInput, LogBatchInput } from './types'
+import * as registry from './services/registry'
+import * as stats from './services/stats'
 
 // Re-export AppLogsDO for wrangler to find
 export { AppLogsDO } from './durable-objects/app-logs-do'
@@ -23,15 +25,19 @@ app.get('/', (c) => {
   return c.json(
     Ok({
       service: 'worker-logs',
-      version: '0.2.0',
+      version: '0.3.0',
       description: 'Centralized logging service for Cloudflare Workers',
       endpoints: {
-        'POST /logs': 'Write log entries (requires X-API-Key)',
-        'GET /logs': 'Query log entries (requires X-API-Key)',
+        'POST /logs': 'Write log entries (requires X-App-ID header)',
+        'GET /logs': 'Query log entries (requires X-App-ID header)',
         'GET /health/:app_id': 'Get health check history',
-        'GET /stats/:app_id': 'Get daily stats',
+        'GET /stats/:app_id': 'Get daily stats (last 7 days)',
         'POST /apps/:app_id/prune': 'Delete old logs',
         'POST /apps/:app_id/health-urls': 'Set health check URLs',
+        'GET /apps': 'List registered apps',
+        'POST /apps': 'Register a new app',
+        'GET /apps/:app_id': 'Get app details',
+        'DELETE /apps/:app_id': 'Delete an app',
       },
     })
   )
@@ -54,14 +60,37 @@ app.post('/logs', async (c) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }))
-    return c.json(await res.json())
+    const result = await res.json() as { ok: boolean }
+
+    // Record stats for batch
+    if (result.ok && c.env.LOGS_KV) {
+      const counts = body.logs.reduce((acc, log) => {
+        const existing = acc.find((c) => c.level === log.level)
+        if (existing) {
+          existing.count++
+        } else {
+          acc.push({ level: log.level, count: 1 })
+        }
+        return acc
+      }, [] as { level: string; count: number }[])
+      await stats.incrementStatsBatch(c.env.LOGS_KV, appId, counts as any)
+    }
+
+    return c.json(result)
   } else {
     const res = await stub.fetch(new Request('http://do/log', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }))
-    return c.json(await res.json())
+    const result = await res.json() as { ok: boolean }
+
+    // Record stats for single log
+    if (result.ok && c.env.LOGS_KV) {
+      await stats.incrementStats(c.env.LOGS_KV, appId, body.level)
+    }
+
+    return c.json(result)
   }
 })
 
@@ -93,9 +122,21 @@ app.get('/health/:app_id', async (c) => {
   return c.json(await res.json())
 })
 
-// GET /stats/:app_id - Get daily stats (placeholder - Phase 4)
+// GET /stats/:app_id - Get daily stats (last 7 days)
 app.get('/stats/:app_id', async (c) => {
-  return c.json(Err({ code: ErrorCode.NOT_IMPLEMENTED, message: 'Stats endpoint coming in Phase 4' }), 501)
+  const appId = c.req.param('app_id')
+  const days = c.req.query('days') ? parseInt(c.req.query('days')!) : 7
+
+  if (!c.env.LOGS_KV) {
+    return c.json(Err({ code: ErrorCode.INTERNAL_ERROR, message: 'KV namespace not configured' }), 500)
+  }
+
+  const result = await stats.getStatsRange(c.env.LOGS_KV, appId, days)
+  if (!result.ok) {
+    return c.json(result, 500)
+  }
+
+  return c.json(Ok(result.data))
 })
 
 // POST /apps/:app_id/prune - Delete old logs
@@ -132,6 +173,76 @@ app.post('/apps/:app_id/health-urls', async (c) => {
     body: JSON.stringify(body),
   }))
   return c.json(await res.json())
+})
+
+// GET /apps - List registered apps
+app.get('/apps', async (c) => {
+  if (!c.env.LOGS_KV) {
+    return c.json(Err({ code: ErrorCode.INTERNAL_ERROR, message: 'KV namespace not configured' }), 500)
+  }
+
+  const result = await registry.listApps(c.env.LOGS_KV)
+  if (!result.ok) {
+    return c.json(result, 500)
+  }
+
+  return c.json(Ok(result.data))
+})
+
+// POST /apps - Register a new app
+app.post('/apps', async (c) => {
+  if (!c.env.LOGS_KV) {
+    return c.json(Err({ code: ErrorCode.INTERNAL_ERROR, message: 'KV namespace not configured' }), 500)
+  }
+
+  const body = await c.req.json<{ app_id: string; name: string; health_urls?: string[] }>()
+
+  if (!body.app_id || !body.name) {
+    return c.json(Err({ code: ErrorCode.BAD_REQUEST, message: '"app_id" and "name" required' }), 400)
+  }
+
+  const result = await registry.registerApp(c.env.LOGS_KV, body.app_id, body.name, body.health_urls)
+  if (!result.ok) {
+    return c.json(result, 500)
+  }
+
+  return c.json(Ok(result.data), 201)
+})
+
+// GET /apps/:app_id - Get app details
+app.get('/apps/:app_id', async (c) => {
+  const appId = c.req.param('app_id')
+
+  if (!c.env.LOGS_KV) {
+    return c.json(Err({ code: ErrorCode.INTERNAL_ERROR, message: 'KV namespace not configured' }), 500)
+  }
+
+  const result = await registry.getApp(c.env.LOGS_KV, appId)
+  if (!result.ok) {
+    return c.json(result, 500)
+  }
+
+  if (!result.data) {
+    return c.json(Err({ code: ErrorCode.NOT_FOUND, message: `App '${appId}' not found` }), 404)
+  }
+
+  return c.json(Ok(result.data))
+})
+
+// DELETE /apps/:app_id - Delete an app
+app.delete('/apps/:app_id', async (c) => {
+  const appId = c.req.param('app_id')
+
+  if (!c.env.LOGS_KV) {
+    return c.json(Err({ code: ErrorCode.INTERNAL_ERROR, message: 'KV namespace not configured' }), 500)
+  }
+
+  const result = await registry.deleteApp(c.env.LOGS_KV, appId)
+  if (!result.ok) {
+    return c.json(result, 500)
+  }
+
+  return c.json(Ok(result.data))
 })
 
 // Export the Hono app as the default fetch handler
