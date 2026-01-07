@@ -31,5 +31,10 @@
   // KV namespace for app registry and stats
   "kv_namespaces": [
     { "binding": "LOGS_KV", "id": "6255715dc02c4829b7d7c2986a3bf63a" }
-  ]
+  ],
+
+  // Variables (set ADMIN_API_KEY via secret in production)
+  "vars": {
+    "ADMIN_API_KEY": "test-admin-key-for-development"
+  }
 }

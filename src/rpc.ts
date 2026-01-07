@@ -7,7 +7,6 @@
 
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import type { Env, LogInput, LogEntry, QueryFilters, DailyStats } from './types'
-import * as stats from './services/stats'
 
 /**
  * RPC interface for worker-logs service binding.
@@ -41,9 +40,13 @@ export class LogsRPC extends WorkerEntrypoint<Env> {
 
     const result = await res.json() as { ok: boolean; data: LogEntry }
 
-    // Record stats
-    if (result.ok && this.env.LOGS_KV) {
-      await stats.incrementStats(this.env.LOGS_KV, appId, entry.level)
+    // Record stats in DO (atomic, no race condition)
+    if (result.ok) {
+      await stub.fetch(new Request('http://do/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level: entry.level }),
+      }))
     }
 
     return result.data
@@ -63,8 +66,8 @@ export class LogsRPC extends WorkerEntrypoint<Env> {
 
     const result = await res.json() as { ok: boolean; data: { count: number } }
 
-    // Record stats for batch
-    if (result.ok && this.env.LOGS_KV) {
+    // Record stats in DO (atomic, no race condition)
+    if (result.ok) {
       const counts = entries.reduce((acc, log) => {
         const existing = acc.find((c) => c.level === log.level)
         if (existing) {
@@ -74,7 +77,11 @@ export class LogsRPC extends WorkerEntrypoint<Env> {
         }
         return acc
       }, [] as { level: string; count: number }[])
-      await stats.incrementStatsBatch(this.env.LOGS_KV, appId, counts as any)
+      await stub.fetch(new Request('http://do/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ counts }),
+      }))
     }
 
     return result.data
@@ -107,11 +114,13 @@ export class LogsRPC extends WorkerEntrypoint<Env> {
    * Get daily stats for an app
    */
   async getStats(appId: string, days: number = 7): Promise<DailyStats[]> {
-    if (!this.env.LOGS_KV) {
-      return []
-    }
+    const stub = this.getAppDO(appId)
 
-    const result = await stats.getStatsRange(this.env.LOGS_KV, appId, days)
+    const res = await stub.fetch(new Request(`http://do/stats?days=${days}`, {
+      method: 'GET',
+    }))
+
+    const result = await res.json() as { ok: boolean; data: DailyStats[] }
     return result.ok ? result.data : []
   }
 

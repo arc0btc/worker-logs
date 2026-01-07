@@ -9,6 +9,7 @@
 export interface Env {
   APP_LOGS_DO: DurableObjectNamespace
   LOGS_KV: KVNamespace
+  ADMIN_API_KEY?: string
 }
 
 /**

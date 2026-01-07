@@ -8,6 +8,7 @@ import type {
   QueryFilters,
   HealthCheck,
   PruneResult,
+  DailyStats,
 } from '../types'
 
 /**
@@ -53,6 +54,14 @@ export class AppLogsDO extends DurableObject<Env> {
       CREATE TABLE IF NOT EXISTS config (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS daily_stats (
+        date TEXT PRIMARY KEY,
+        debug INTEGER DEFAULT 0,
+        info INTEGER DEFAULT 0,
+        warn INTEGER DEFAULT 0,
+        error INTEGER DEFAULT 0
       );
     `)
   }
@@ -337,6 +346,128 @@ export class AppLogsDO extends DurableObject<Env> {
   }
 
   /**
+   * Get the date string for today (YYYY-MM-DD)
+   */
+  private getDateKey(date?: Date): string {
+    const d = date ?? new Date()
+    return d.toISOString().split('T')[0]
+  }
+
+  /**
+   * Record stats for a log level (atomic increment in SQLite)
+   * This is called internally after successfully storing a log
+   */
+  recordStats(level: LogLevel, count: number = 1): DailyStats {
+    const dateKey = this.getDateKey()
+
+    // Ensure row exists for today
+    this.sql.exec(
+      `INSERT OR IGNORE INTO daily_stats (date, debug, info, warn, error) VALUES (?, 0, 0, 0, 0)`,
+      dateKey
+    )
+
+    // Atomic increment based on level
+    const column = level.toLowerCase()
+    this.sql.exec(
+      `UPDATE daily_stats SET ${column} = ${column} + ? WHERE date = ?`,
+      count,
+      dateKey
+    )
+
+    // Return current stats
+    const cursor = this.sql.exec(`SELECT * FROM daily_stats WHERE date = ?`, dateKey)
+    const row = cursor.one()
+
+    return {
+      date: row!.date as string,
+      debug: row!.debug as number,
+      info: row!.info as number,
+      warn: row!.warn as number,
+      error: row!.error as number,
+    }
+  }
+
+  /**
+   * Record stats for multiple log levels (batch)
+   */
+  recordStatsBatch(counts: { level: LogLevel; count: number }[]): DailyStats {
+    const dateKey = this.getDateKey()
+
+    // Ensure row exists for today
+    this.sql.exec(
+      `INSERT OR IGNORE INTO daily_stats (date, debug, info, warn, error) VALUES (?, 0, 0, 0, 0)`,
+      dateKey
+    )
+
+    // Aggregate counts by level
+    const totals = { debug: 0, info: 0, warn: 0, error: 0 }
+    for (const { level, count } of counts) {
+      totals[level.toLowerCase() as keyof typeof totals] += count
+    }
+
+    // Single update with all increments
+    this.sql.exec(
+      `UPDATE daily_stats SET debug = debug + ?, info = info + ?, warn = warn + ?, error = error + ? WHERE date = ?`,
+      totals.debug,
+      totals.info,
+      totals.warn,
+      totals.error,
+      dateKey
+    )
+
+    // Return current stats
+    const cursor = this.sql.exec(`SELECT * FROM daily_stats WHERE date = ?`, dateKey)
+    const row = cursor.one()
+
+    return {
+      date: row!.date as string,
+      debug: row!.debug as number,
+      info: row!.info as number,
+      warn: row!.warn as number,
+      error: row!.error as number,
+    }
+  }
+
+  /**
+   * Get stats for a specific date
+   */
+  getStats(date?: string): DailyStats {
+    const dateKey = date ?? this.getDateKey()
+    const cursor = this.sql.exec(`SELECT * FROM daily_stats WHERE date = ?`, dateKey)
+    const rows = cursor.toArray()
+
+    if (rows.length === 0) {
+      return { date: dateKey, debug: 0, info: 0, warn: 0, error: 0 }
+    }
+
+    const row = rows[0]
+    return {
+      date: row.date as string,
+      debug: row.debug as number,
+      info: row.info as number,
+      warn: row.warn as number,
+      error: row.error as number,
+    }
+  }
+
+  /**
+   * Get stats for multiple days
+   */
+  getStatsRange(days: number = 7): DailyStats[] {
+    const stats: DailyStats[] = []
+    const today = new Date()
+
+    for (let i = 0; i < days; i++) {
+      const date = new Date(today)
+      date.setDate(date.getDate() - i)
+      const dateKey = this.getDateKey(date)
+      stats.push(this.getStats(dateKey))
+    }
+
+    return stats
+  }
+
+  /**
    * Alarm handler for periodic health checks
    */
   async alarm(alarmInfo?: { retryCount: number; isRetry: boolean }) {
@@ -433,6 +564,32 @@ export class AppLogsDO extends DurableObject<Env> {
           : 50
         const result = await this.getHealthHistory(urlParam, limit)
         return Response.json(result)
+      }
+
+      // POST /stats - record stats (internal only)
+      if (request.method === 'POST' && path === '/stats') {
+        const body = (await request.json()) as { level?: LogLevel; counts?: { level: LogLevel; count: number }[] }
+        let result: DailyStats
+        if (body.counts) {
+          result = this.recordStatsBatch(body.counts)
+        } else if (body.level) {
+          result = this.recordStats(body.level)
+        } else {
+          return Response.json(
+            Err({ code: ErrorCode.BAD_REQUEST, message: 'level or counts required' }),
+            { status: 400 }
+          )
+        }
+        return Response.json(Ok(result))
+      }
+
+      // GET /stats - get daily stats
+      if (request.method === 'GET' && path === '/stats') {
+        const days = url.searchParams.has('days')
+          ? parseInt(url.searchParams.get('days')!)
+          : 7
+        const result = this.getStatsRange(days)
+        return Response.json(Ok(result))
       }
 
       return Response.json(

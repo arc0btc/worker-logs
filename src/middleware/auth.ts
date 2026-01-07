@@ -66,3 +66,25 @@ export const requireAppId = createMiddleware<{ Bindings: Env; Variables: Variabl
 
   await next()
 })
+
+/**
+ * Middleware that requires X-Admin-Key header for admin operations.
+ * Used to protect app registration and other administrative endpoints.
+ */
+export const requireAdminKey = createMiddleware<{ Bindings: Env }>(async (c, next) => {
+  const adminKey = c.req.header('X-Admin-Key')
+
+  if (!c.env.ADMIN_API_KEY) {
+    return c.json(Err({ code: ErrorCode.SERVICE_UNAVAILABLE, message: 'Admin authentication not configured' }), 503)
+  }
+
+  if (!adminKey) {
+    return c.json(Err({ code: ErrorCode.UNAUTHORIZED, message: 'X-Admin-Key header required' }), 401)
+  }
+
+  if (adminKey !== c.env.ADMIN_API_KEY) {
+    return c.json(Err({ code: ErrorCode.UNAUTHORIZED, message: 'Invalid admin key' }), 401)
+  }
+
+  await next()
+})

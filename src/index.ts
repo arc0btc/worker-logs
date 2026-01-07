@@ -3,8 +3,7 @@ import { cors } from 'hono/cors'
 import { Ok, Err, ErrorCode } from './result'
 import type { Env, LogInput, LogBatchInput } from './types'
 import * as registry from './services/registry'
-import * as stats from './services/stats'
-import { requireApiKey } from './middleware/auth'
+import { requireApiKey, requireAdminKey } from './middleware/auth'
 
 // Re-export AppLogsDO for wrangler to find
 export { AppLogsDO } from './durable-objects/app-logs-do'
@@ -46,7 +45,7 @@ app.get('/', (c) => {
         'POST /apps/:app_id/prune': 'Delete old logs (requires API key)',
         'POST /apps/:app_id/health-urls': 'Set health check URLs (requires API key)',
         'GET /apps': 'List registered apps',
-        'POST /apps': 'Register a new app',
+        'POST /apps': 'Register a new app (requires admin key)',
         'GET /apps/:app_id': 'Get app details',
         'DELETE /apps/:app_id': 'Delete an app (requires API key)',
       },
@@ -69,8 +68,8 @@ app.post('/logs', requireApiKey, async (c) => {
     }))
     const result = await res.json() as { ok: boolean }
 
-    // Record stats for batch
-    if (result.ok && c.env.LOGS_KV) {
+    // Record stats in DO (atomic, no race condition)
+    if (result.ok) {
       const counts = body.logs.reduce((acc, log) => {
         const existing = acc.find((c) => c.level === log.level)
         if (existing) {
@@ -80,7 +79,11 @@ app.post('/logs', requireApiKey, async (c) => {
         }
         return acc
       }, [] as { level: string; count: number }[])
-      await stats.incrementStatsBatch(c.env.LOGS_KV, appId, counts as any)
+      await stub.fetch(new Request('http://do/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ counts }),
+      }))
     }
 
     return c.json(result)
@@ -92,9 +95,13 @@ app.post('/logs', requireApiKey, async (c) => {
     }))
     const result = await res.json() as { ok: boolean }
 
-    // Record stats for single log
-    if (result.ok && c.env.LOGS_KV) {
-      await stats.incrementStats(c.env.LOGS_KV, appId, body.level)
+    // Record stats in DO (atomic, no race condition)
+    if (result.ok) {
+      await stub.fetch(new Request('http://do/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level: body.level }),
+      }))
     }
 
     return c.json(result)
@@ -129,17 +136,12 @@ app.get('/health/:app_id', async (c) => {
 app.get('/stats/:app_id', async (c) => {
   const appId = c.req.param('app_id')
   const days = c.req.query('days') ? parseInt(c.req.query('days')!) : 7
+  const stub = getAppDO(c.env, appId)
 
-  if (!c.env.LOGS_KV) {
-    return c.json(Err({ code: ErrorCode.INTERNAL_ERROR, message: 'KV namespace not configured' }), 500)
-  }
-
-  const result = await stats.getStatsRange(c.env.LOGS_KV, appId, days)
-  if (!result.ok) {
-    return c.json(result, 500)
-  }
-
-  return c.json(Ok(result.data))
+  const res = await stub.fetch(new Request(`http://do/stats?days=${days}`, {
+    method: 'GET',
+  }))
+  return c.json(await res.json())
 })
 
 // POST /apps/:app_id/prune - Delete old logs (requires API key)
@@ -204,8 +206,8 @@ app.get('/apps', async (c) => {
   return c.json(Ok(result.data))
 })
 
-// POST /apps - Register a new app
-app.post('/apps', async (c) => {
+// POST /apps - Register a new app (requires admin key)
+app.post('/apps', requireAdminKey, async (c) => {
   if (!c.env.LOGS_KV) {
     return c.json(Err({ code: ErrorCode.INTERNAL_ERROR, message: 'KV namespace not configured' }), 500)
   }
