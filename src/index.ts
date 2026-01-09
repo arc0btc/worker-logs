@@ -4,6 +4,7 @@ import { Ok, Err, ErrorCode } from './result'
 import type { Env, LogInput, LogBatchInput } from './types'
 import * as registry from './services/registry'
 import { requireApiKey, requireAdminKey } from './middleware/auth'
+import { dashboard } from './dashboard'
 
 // Re-export AppLogsDO for wrangler to find
 export { AppLogsDO } from './durable-objects/app-logs-do'
@@ -22,6 +23,9 @@ const app = new Hono<{ Bindings: Env; Variables: Variables }>()
 
 app.use('*', cors())
 
+// Mount dashboard routes
+app.route('/dashboard', dashboard)
+
 /**
  * Get a DO stub for the given app_id
  */
@@ -35,9 +39,10 @@ app.get('/', (c) => {
   return c.json(
     Ok({
       service: 'worker-logs',
-      version: '0.3.0',
+      version: '0.4.0',
       description: 'Centralized logging service for Cloudflare Workers',
       endpoints: {
+        'GET /dashboard': 'Web UI for browsing logs (requires admin key)',
         'POST /logs': 'Write log entries (requires API key)',
         'GET /logs': 'Query log entries (requires API key)',
         'GET /health/:app_id': 'Get health check history',
