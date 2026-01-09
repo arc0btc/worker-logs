@@ -31,15 +31,52 @@ Tests use `@cloudflare/vitest-pool-workers` with `isolatedStorage: false` (requi
 
 ## Authentication
 
-- **Admin Key** (`X-Admin-Key` header): Required for `POST /apps` (app registration)
-- **API Key** (`X-Api-Key` + `X-App-ID` headers): Required for `/logs` endpoints
-- **No Auth**: `GET /apps`, `GET /stats/:id`, `GET /health/:id`
+### API Endpoints
+
+| Endpoint | Auth Required |
+|----------|---------------|
+| `POST /logs`, `GET /logs` | API Key |
+| `POST /apps/:id/prune`, `POST /apps/:id/health-urls` | API Key (matching app) |
+| `DELETE /apps/:id` | API Key (matching app) |
+| `GET /apps` | Admin Key |
+| `POST /apps` | Admin Key |
+| `GET /apps/:id`, `GET /stats/:id` | API Key (own app) OR Admin Key |
+| `GET /health/:id` | Public (for monitoring) |
+| `GET /` | Public (service info) |
+
+### Headers
+
+- **Admin Key**: `X-Admin-Key` header
+- **API Key**: `X-Api-Key` + `X-App-ID` headers
+
+### Dashboard
+
+The web dashboard (`/dashboard`) uses cookie-based session auth with the admin key. For production, consider adding Cloudflare Access for zero-trust protection.
+
+### Cloudflare Access Setup (Optional)
+
+To add identity-based access to the dashboard:
+
+1. Go to Cloudflare Dashboard > Zero Trust > Access > Applications
+2. Click "Add an application" > Self-hosted
+3. Configure:
+   - Application name: `worker-logs-dashboard`
+   - Session duration: 24 hours
+   - Application domain: `logs.wbd.host`
+   - Path: `/dashboard*`
+4. Add a policy:
+   - Policy name: `Admin Access`
+   - Action: Allow
+   - Include: Email (your email) or Identity Provider group
+5. Save and deploy
+
+This adds SSO/MFA before requests reach the worker, without code changes.
 
 ## Development Commands
 
 ```bash
 npm run dev        # Local dev server
-npm run build      # Type check
+npm run cf-typegen # Generate types from wrangler.jsonc
 npm run deploy     # Deploy to Cloudflare (prefer CI/CD)
 ```
 

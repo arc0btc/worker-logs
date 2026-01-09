@@ -6,6 +6,11 @@
   // nodejs_compat_v2 includes RPC support (requires compat date >= 2024-04-03)
   "compatibility_flags": ["nodejs_compat_v2"],
 
+  // Environment variables for testing (production uses secrets)
+  "vars": {
+    "ADMIN_API_KEY": "test-admin-key-for-development-only"
+  },
+
   // Custom domain route
   "routes": [
     { "pattern": "logs.wbd.host", "custom_domain": true }
@@ -32,9 +37,4 @@
   "kv_namespaces": [
     { "binding": "LOGS_KV", "id": "6255715dc02c4829b7d7c2986a3bf63a" }
   ],
-
-  // Variables (set ADMIN_API_KEY via secret in production)
-  "vars": {
-    "ADMIN_API_KEY": "test-admin-key-for-development"
-  }
 }

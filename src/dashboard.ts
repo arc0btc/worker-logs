@@ -247,7 +247,7 @@ function dashboardPage() {
     // Load apps on page load
     async function loadApps() {
       try {
-        const res = await fetch('/apps');
+        const res = await fetch('/dashboard/api/apps');
         const data = await res.json();
         if (data.ok && data.data) {
           data.data.forEach(appId => {
@@ -266,7 +266,7 @@ function dashboardPage() {
     async function loadStats() {
       if (!currentApp) return;
       try {
-        const res = await fetch(\`/stats/\${currentApp}?days=1\`);
+        const res = await fetch(\`/dashboard/api/stats/\${currentApp}?days=1\`);
         const data = await res.json();
         if (data.ok && data.data && data.data[0]) {
           const today = data.data[0];
@@ -483,6 +483,43 @@ dashboard.get('/api/logs/:app_id', async (c) => {
   const stub = c.env.APP_LOGS_DO.get(id)
 
   const res = await stub.fetch(new Request(`http://do/logs${url.search}`, {
+    method: 'GET',
+  }))
+
+  return c.json(await res.json())
+})
+
+// API endpoint for listing apps (requires auth)
+dashboard.get('/api/apps', async (c) => {
+  if (!await isAuthenticated(c)) {
+    return c.json({ ok: false, error: 'Unauthorized' }, 401)
+  }
+
+  if (!c.env.LOGS_KV) {
+    return c.json({ ok: false, error: 'KV namespace not configured' }, 500)
+  }
+
+  const data = await c.env.LOGS_KV.get('apps')
+  if (!data) {
+    return c.json({ ok: true, data: [] })
+  }
+
+  return c.json({ ok: true, data: JSON.parse(data) })
+})
+
+// API endpoint for fetching stats (requires auth)
+dashboard.get('/api/stats/:app_id', async (c) => {
+  if (!await isAuthenticated(c)) {
+    return c.json({ ok: false, error: 'Unauthorized' }, 401)
+  }
+
+  const appId = c.req.param('app_id')
+  const days = c.req.query('days') || '7'
+
+  const id = c.env.APP_LOGS_DO.idFromName(appId)
+  const stub = c.env.APP_LOGS_DO.get(id)
+
+  const res = await stub.fetch(new Request(`http://do/stats?days=${days}`, {
     method: 'GET',
   }))
 

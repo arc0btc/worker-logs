@@ -3,7 +3,7 @@ import { cors } from 'hono/cors'
 import { Ok, Err, ErrorCode } from './result'
 import type { Env, LogInput, LogBatchInput } from './types'
 import * as registry from './services/registry'
-import { requireApiKey, requireAdminKey } from './middleware/auth'
+import { requireApiKey, requireAdminKey, requireApiKeyOrAdmin } from './middleware/auth'
 import { dashboard } from './dashboard'
 
 // Re-export AppLogsDO for wrangler to find
@@ -45,13 +45,13 @@ app.get('/', (c) => {
         'GET /dashboard': 'Web UI for browsing logs (requires admin key)',
         'POST /logs': 'Write log entries (requires API key)',
         'GET /logs': 'Query log entries (requires API key)',
-        'GET /health/:app_id': 'Get health check history',
-        'GET /stats/:app_id': 'Get daily stats (last 7 days)',
+        'GET /health/:app_id': 'Get health check history (public)',
+        'GET /stats/:app_id': 'Get daily stats (requires API key or admin)',
         'POST /apps/:app_id/prune': 'Delete old logs (requires API key)',
         'POST /apps/:app_id/health-urls': 'Set health check URLs (requires API key)',
-        'GET /apps': 'List registered apps',
+        'GET /apps': 'List registered apps (requires admin key)',
         'POST /apps': 'Register a new app (requires admin key)',
-        'GET /apps/:app_id': 'Get app details',
+        'GET /apps/:app_id': 'Get app details (requires API key or admin)',
         'DELETE /apps/:app_id': 'Delete an app (requires API key)',
       },
     })
@@ -137,9 +137,16 @@ app.get('/health/:app_id', async (c) => {
   return c.json(await res.json())
 })
 
-// GET /stats/:app_id - Get daily stats (last 7 days)
-app.get('/stats/:app_id', async (c) => {
+// GET /stats/:app_id - Get daily stats (requires API key or admin)
+app.get('/stats/:app_id', requireApiKeyOrAdmin, async (c) => {
   const appId = c.req.param('app_id')
+  const authenticatedAppId = c.get('appId')
+
+  // If using API key auth, must match the requested app
+  if (authenticatedAppId && appId !== authenticatedAppId) {
+    return c.json(Err({ code: ErrorCode.UNAUTHORIZED, message: 'App ID mismatch' }), 403)
+  }
+
   const days = c.req.query('days') ? parseInt(c.req.query('days')!) : 7
   const stub = getAppDO(c.env, appId)
 
@@ -197,8 +204,8 @@ app.post('/apps/:app_id/health-urls', requireApiKey, async (c) => {
   return c.json(await res.json())
 })
 
-// GET /apps - List registered apps
-app.get('/apps', async (c) => {
+// GET /apps - List registered apps (admin only)
+app.get('/apps', requireAdminKey, async (c) => {
   if (!c.env.LOGS_KV) {
     return c.json(Err({ code: ErrorCode.INTERNAL_ERROR, message: 'KV namespace not configured' }), 500)
   }
@@ -231,9 +238,15 @@ app.post('/apps', requireAdminKey, async (c) => {
   return c.json(Ok(result.data), 201)
 })
 
-// GET /apps/:app_id - Get app details (excludes API key for security)
-app.get('/apps/:app_id', async (c) => {
+// GET /apps/:app_id - Get app details (requires API key or admin)
+app.get('/apps/:app_id', requireApiKeyOrAdmin, async (c) => {
   const appId = c.req.param('app_id')
+  const authenticatedAppId = c.get('appId')
+
+  // If using API key auth, must match the requested app
+  if (authenticatedAppId && appId !== authenticatedAppId) {
+    return c.json(Err({ code: ErrorCode.UNAUTHORIZED, message: 'App ID mismatch' }), 403)
+  }
 
   if (!c.env.LOGS_KV) {
     return c.json(Err({ code: ErrorCode.INTERNAL_ERROR, message: 'KV namespace not configured' }), 500)
@@ -248,7 +261,7 @@ app.get('/apps/:app_id', async (c) => {
     return c.json(Err({ code: ErrorCode.NOT_FOUND, message: `App '${appId}' not found` }), 404)
   }
 
-  // Don't expose API key in public endpoint
+  // Don't expose API key
   const { api_key: _, ...safeData } = result.data
   return c.json(Ok(safeData))
 })

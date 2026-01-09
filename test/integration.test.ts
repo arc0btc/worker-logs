@@ -252,8 +252,18 @@ describe('HTTP API Integration', () => {
       })
     })
 
-    it('GET /stats/:app_id returns daily stats', async () => {
+    it('GET /stats/:app_id without auth returns 400', async () => {
       const response = await SELF.fetch(`https://example.com/stats/${APP_ID}`)
+      expect(response.status).toBe(400)
+    })
+
+    it('GET /stats/:app_id with API key returns daily stats', async () => {
+      const response = await SELF.fetch(`https://example.com/stats/${APP_ID}`, {
+        headers: {
+          'X-App-ID': APP_ID,
+          'X-Api-Key': apiKey,
+        },
+      })
       expect(response.status).toBe(200)
 
       const data = (await response.json()) as { ok: boolean; data: Array<{ date: string; info: number; warn: number }>; error?: { message: string } }
@@ -270,13 +280,23 @@ describe('HTTP API Integration', () => {
       expect(today!.info).toBeGreaterThanOrEqual(2)
       expect(today!.warn).toBeGreaterThanOrEqual(1)
     })
+
+    it('GET /stats/:app_id with admin key returns daily stats', async () => {
+      const response = await SELF.fetch(`https://example.com/stats/${APP_ID}`, {
+        headers: {
+          'X-Admin-Key': env.ADMIN_API_KEY,
+        },
+      })
+      expect(response.status).toBe(200)
+    })
   })
 
   describe('App listing and details', () => {
     const APP_ID = 'listing-test-app'
+    let apiKey: string
 
     beforeAll(async () => {
-      await SELF.fetch('https://example.com/apps', {
+      const response = await SELF.fetch('https://example.com/apps', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -284,10 +304,21 @@ describe('HTTP API Integration', () => {
         },
         body: JSON.stringify({ app_id: APP_ID, name: 'Listing Test App' }),
       })
+      const data = (await response.json()) as { data: { api_key: string } }
+      apiKey = data.data.api_key
     })
 
-    it('GET /apps lists registered apps', async () => {
+    it('GET /apps without admin key returns 401', async () => {
       const response = await SELF.fetch('https://example.com/apps')
+      expect(response.status).toBe(401)
+    })
+
+    it('GET /apps with admin key lists registered apps', async () => {
+      const response = await SELF.fetch('https://example.com/apps', {
+        headers: {
+          'X-Admin-Key': env.ADMIN_API_KEY,
+        },
+      })
       expect(response.status).toBe(200)
 
       const data = (await response.json()) as { ok: boolean; data: string[] }
@@ -295,8 +326,18 @@ describe('HTTP API Integration', () => {
       expect(data.data).toContain(APP_ID)
     })
 
-    it('GET /apps/:app_id returns app details without API key', async () => {
+    it('GET /apps/:app_id without auth returns 400', async () => {
       const response = await SELF.fetch(`https://example.com/apps/${APP_ID}`)
+      expect(response.status).toBe(400)
+    })
+
+    it('GET /apps/:app_id with API key returns app details', async () => {
+      const response = await SELF.fetch(`https://example.com/apps/${APP_ID}`, {
+        headers: {
+          'X-App-ID': APP_ID,
+          'X-Api-Key': apiKey,
+        },
+      })
       expect(response.status).toBe(200)
 
       const data = (await response.json()) as { ok: boolean; data: { name: string; api_key?: string } }
@@ -306,8 +347,21 @@ describe('HTTP API Integration', () => {
       expect(data.data.api_key).toBeUndefined()
     })
 
-    it('GET /apps/:unknown returns 404', async () => {
-      const response = await SELF.fetch('https://example.com/apps/nonexistent-app')
+    it('GET /apps/:app_id with admin key returns app details', async () => {
+      const response = await SELF.fetch(`https://example.com/apps/${APP_ID}`, {
+        headers: {
+          'X-Admin-Key': env.ADMIN_API_KEY,
+        },
+      })
+      expect(response.status).toBe(200)
+    })
+
+    it('GET /apps/:unknown with admin key returns 404', async () => {
+      const response = await SELF.fetch('https://example.com/apps/nonexistent-app', {
+        headers: {
+          'X-Admin-Key': env.ADMIN_API_KEY,
+        },
+      })
       expect(response.status).toBe(404)
     })
   })
