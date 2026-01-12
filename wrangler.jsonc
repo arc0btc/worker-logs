@@ -15,6 +15,11 @@
     "enabled": true
   },
 
+  /**
+   * For local dev, create .dev.vars with:
+   *   ADMIN_API_KEY=test-admin-key-for-development-only
+   */
+
   // Durable Object bindings
   "durable_objects": {
     "bindings": [{ "name": "APP_LOGS_DO", "class_name": "AppLogsDO" }]
