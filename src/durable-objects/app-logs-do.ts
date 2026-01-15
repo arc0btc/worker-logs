@@ -172,6 +172,21 @@ export class AppLogsDO extends DurableObject<Env> {
         params.push(filters.request_id)
       }
 
+      // Full-text search in message
+      if (filters.search) {
+        conditions.push('message LIKE ?')
+        params.push(`%${filters.search}%`)
+      }
+
+      // Context field filters (e.g., path, status)
+      if (filters.context) {
+        for (const [key, value] of Object.entries(filters.context)) {
+          // Use json_extract for SQLite JSON querying
+          conditions.push(`json_extract(context, '$.${key}') = ?`)
+          params.push(value)
+        }
+      }
+
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
       const limit = filters.limit ?? 100
       const offset = filters.offset ?? 0
@@ -526,11 +541,22 @@ export class AppLogsDO extends DurableObject<Env> {
 
       // GET /logs - query
       if (request.method === 'GET' && path === '/logs') {
+        // Parse context.* filters from query params
+        const context: Record<string, string> = {}
+        for (const [key, value] of url.searchParams.entries()) {
+          if (key.startsWith('context.')) {
+            const contextKey = key.substring(8) // Remove 'context.' prefix
+            context[contextKey] = value
+          }
+        }
+
         const filters: QueryFilters = {
           level: url.searchParams.get('level') as LogLevel | undefined,
           since: url.searchParams.get('since') ?? undefined,
           until: url.searchParams.get('until') ?? undefined,
           request_id: url.searchParams.get('request_id') ?? undefined,
+          search: url.searchParams.get('search') ?? undefined,
+          context: Object.keys(context).length > 0 ? context : undefined,
           limit: url.searchParams.has('limit')
             ? parseInt(url.searchParams.get('limit')!)
             : undefined,

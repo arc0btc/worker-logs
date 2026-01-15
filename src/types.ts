@@ -61,6 +61,8 @@ export interface QueryFilters {
   since?: string // ISO timestamp
   until?: string // ISO timestamp
   request_id?: string
+  search?: string // Full-text search in message
+  context?: Record<string, string> // Filter by context fields (e.g., path, status)
   limit?: number
   offset?: number
 }

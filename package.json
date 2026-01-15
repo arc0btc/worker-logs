@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run wrangler -- dev",
+    "dev": "npm run wrangler -- dev --ip 0.0.0.0",
     "deploy": "npm run wrangler -- deploy",
     "cf-typegen": "npm run wrangler -- types",
     "wrangler": "set -a && . ./.env && set +a && npx wrangler",

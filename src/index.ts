@@ -4,7 +4,7 @@ import { Ok, Err, ErrorCode } from './result'
 import type { Env, LogInput, LogBatchInput } from './types'
 import * as registry from './services/registry'
 import { requireApiKey, requireAdminKey, requireApiKeyOrAdmin } from './middleware/auth'
-import { dashboard } from './dashboard'
+import { dashboard } from './dashboard/index'
 
 // Re-export AppLogsDO for wrangler to find
 export { AppLogsDO } from './durable-objects/app-logs-do'
