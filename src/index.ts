@@ -52,7 +52,7 @@ app.get('/', (c) => {
         'GET /apps': 'List registered apps (requires admin key)',
         'POST /apps': 'Register a new app (requires admin key)',
         'GET /apps/:app_id': 'Get app details (requires API key or admin)',
-        'DELETE /apps/:app_id': 'Delete an app (requires API key)',
+        'DELETE /apps/:app_id': 'Delete an app (requires API key or admin)',
       },
     })
   )
@@ -266,12 +266,13 @@ app.get('/apps/:app_id', requireApiKeyOrAdmin, async (c) => {
   return c.json(Ok(safeData))
 })
 
-// DELETE /apps/:app_id - Delete an app (requires API key)
-app.delete('/apps/:app_id', requireApiKey, async (c) => {
+// DELETE /apps/:app_id - Delete an app (requires API key or admin)
+app.delete('/apps/:app_id', requireApiKeyOrAdmin, async (c) => {
   const appId = c.req.param('app_id')
   const authenticatedAppId = c.get('appId')
 
-  if (appId !== authenticatedAppId) {
+  // If using API key auth, must match the requested app
+  if (authenticatedAppId && appId !== authenticatedAppId) {
     return c.json(Err({ code: ErrorCode.UNAUTHORIZED, message: 'App ID mismatch' }), 403)
   }
 

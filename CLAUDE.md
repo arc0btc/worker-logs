@@ -40,7 +40,7 @@ Tests use `@cloudflare/vitest-pool-workers` with `isolatedStorage: false` (requi
 |----------|---------------|
 | `POST /logs`, `GET /logs` | API Key |
 | `POST /apps/:id/prune`, `POST /apps/:id/health-urls` | API Key (matching app) |
-| `DELETE /apps/:id` | API Key (matching app) |
+| `DELETE /apps/:id` | API Key (matching app) OR Admin Key |
 | `GET /apps` | Admin Key |
 | `POST /apps` | Admin Key |
 | `GET /apps/:id`, `GET /stats/:id` | API Key (own app) OR Admin Key |
