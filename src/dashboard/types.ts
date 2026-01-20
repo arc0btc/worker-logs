@@ -2,7 +2,7 @@
  * Dashboard-specific type definitions
  */
 
-import type { DailyStats, LogEntry, HealthCheck } from '../types'
+import type { DailyStats, LogEntry } from '../types'
 
 /**
  * App summary for the overview page
@@ -30,45 +30,4 @@ export interface OverviewResponse {
     yesterday: { debug: number; info: number; warn: number; error: number }
   }
   recent_errors: Array<LogEntry & { app_id: string }>
-}
-
-/**
- * Saved filter configuration
- */
-export interface SavedFilter {
-  id: string
-  name: string
-  app_id?: string
-  level?: string
-  date_range?: {
-    preset?: 'today' | '7d' | '30d' | 'custom'
-    since?: string
-    until?: string
-  }
-  context_filters?: Record<string, string>
-  search?: string
-  created_at: string
-}
-
-/**
- * Filter state for the app detail page
- */
-export interface FilterState {
-  level: string
-  dateRange: 'today' | '7d' | '30d' | 'custom'
-  since: string
-  until: string
-  requestId: string
-  search: string
-  contextFilters: Array<{ key: string; value: string }>
-}
-
-/**
- * Health status summary
- */
-export interface HealthSummary {
-  url: string
-  status: 'healthy' | 'degraded' | 'down' | 'unknown'
-  last_check?: HealthCheck
-  avg_latency_ms?: number
 }
