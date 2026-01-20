@@ -5,6 +5,7 @@ import type { Env, LogInput, LogBatchInput } from './types'
 import * as registry from './services/registry'
 import { requireApiKey, requireAdminKey, requireApiKeyOrAdmin } from './middleware/auth'
 import { dashboard } from './dashboard/index'
+import { getAppDO, countByLevel } from './utils'
 
 // Re-export AppLogsDO for wrangler to find
 export { AppLogsDO } from './durable-objects/app-logs-do'
@@ -25,14 +26,6 @@ app.use('*', cors())
 
 // Mount dashboard routes
 app.route('/dashboard', dashboard)
-
-/**
- * Get a DO stub for the given app_id
- */
-function getAppDO(env: Env, appId: string) {
-  const id = env.APP_LOGS_DO.idFromName(appId)
-  return env.APP_LOGS_DO.get(id)
-}
 
 // Service info
 app.get('/', (c) => {
@@ -75,15 +68,7 @@ app.post('/logs', requireApiKey, async (c) => {
 
     // Record stats in DO (atomic, no race condition)
     if (result.ok) {
-      const counts = body.logs.reduce((acc, log) => {
-        const existing = acc.find((c) => c.level === log.level)
-        if (existing) {
-          existing.count++
-        } else {
-          acc.push({ level: log.level, count: 1 })
-        }
-        return acc
-      }, [] as { level: string; count: number }[])
+      const counts = countByLevel(body.logs)
       await stub.fetch(new Request('http://do/stats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

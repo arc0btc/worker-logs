@@ -7,6 +7,7 @@
 
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import type { Env, LogInput, LogEntry, QueryFilters, DailyStats } from './types'
+import { getAppDO, countByLevel } from './utils'
 
 /**
  * RPC interface for worker-logs service binding.
@@ -21,16 +22,15 @@ export class LogsRPC extends WorkerEntrypoint<Env> {
   /**
    * Get a Durable Object stub for the given app
    */
-  private getAppDO(appId: string) {
-    const id = this.env.APP_LOGS_DO.idFromName(appId)
-    return this.env.APP_LOGS_DO.get(id)
+  private getStub(appId: string) {
+    return getAppDO(this.env, appId)
   }
 
   /**
    * Write a single log entry
    */
   async log(appId: string, entry: LogInput): Promise<LogEntry> {
-    const stub = this.getAppDO(appId)
+    const stub = this.getStub(appId)
 
     const res = await stub.fetch(new Request('http://do/log', {
       method: 'POST',
@@ -56,7 +56,7 @@ export class LogsRPC extends WorkerEntrypoint<Env> {
    * Write multiple log entries in a batch
    */
   async logBatch(appId: string, entries: LogInput[]): Promise<{ count: number }> {
-    const stub = this.getAppDO(appId)
+    const stub = this.getStub(appId)
 
     const res = await stub.fetch(new Request('http://do/logs', {
       method: 'POST',
@@ -68,15 +68,7 @@ export class LogsRPC extends WorkerEntrypoint<Env> {
 
     // Record stats in DO (atomic, no race condition)
     if (result.ok) {
-      const counts = entries.reduce((acc, log) => {
-        const existing = acc.find((c) => c.level === log.level)
-        if (existing) {
-          existing.count++
-        } else {
-          acc.push({ level: log.level, count: 1 })
-        }
-        return acc
-      }, [] as { level: string; count: number }[])
+      const counts = countByLevel(entries)
       await stub.fetch(new Request('http://do/stats', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -91,7 +83,7 @@ export class LogsRPC extends WorkerEntrypoint<Env> {
    * Query logs with optional filters
    */
   async query(appId: string, filters?: QueryFilters): Promise<LogEntry[]> {
-    const stub = this.getAppDO(appId)
+    const stub = this.getStub(appId)
 
     const params = new URLSearchParams()
     if (filters?.level) params.set('level', filters.level)
@@ -114,7 +106,7 @@ export class LogsRPC extends WorkerEntrypoint<Env> {
    * Get daily stats for an app
    */
   async getStats(appId: string, days: number = 7): Promise<DailyStats[]> {
-    const stub = this.getAppDO(appId)
+    const stub = this.getStub(appId)
 
     const res = await stub.fetch(new Request(`http://do/stats?days=${days}`, {
       method: 'GET',
