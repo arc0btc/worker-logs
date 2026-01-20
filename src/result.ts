@@ -77,36 +77,9 @@ export const ErrorCode = {
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode]
 
 /**
- * Map error codes to HTTP status codes
+ * Wrap an unknown error as an Err result with INTERNAL_ERROR code
  */
-export const ErrorStatusMap: Record<ErrorCode, number> = {
-  [ErrorCode.BAD_REQUEST]: 400,
-  [ErrorCode.UNAUTHORIZED]: 401,
-  [ErrorCode.FORBIDDEN]: 403,
-  [ErrorCode.NOT_FOUND]: 404,
-  [ErrorCode.VALIDATION_ERROR]: 422,
-  [ErrorCode.INTERNAL_ERROR]: 500,
-  [ErrorCode.NOT_IMPLEMENTED]: 501,
-  [ErrorCode.SERVICE_UNAVAILABLE]: 503,
-}
-
-/**
- * Get HTTP status code for an error
- */
-export function getErrorStatus(error: ApiError): number {
-  return ErrorStatusMap[error.code as ErrorCode] ?? 500
-}
-
-/**
- * Type guard to check if result is Ok
- */
-export function isOk<T, E>(result: Result<T, E>): result is Ok<T> {
-  return result.ok === true
-}
-
-/**
- * Type guard to check if result is Err
- */
-export function isErr<T, E>(result: Result<T, E>): result is Err<E> {
-  return result.ok === false
+export function wrapError(e: unknown): Err<ApiError> {
+  const message = e instanceof Error ? e.message : 'Unknown error'
+  return Err({ code: ErrorCode.INTERNAL_ERROR, message })
 }

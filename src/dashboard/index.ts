@@ -14,40 +14,9 @@ import { loginPage } from './pages/login'
 import { overviewPage } from './pages/overview'
 import { appDetailPage, type AppDetailData } from './pages/app-detail'
 import { getOverview } from './api/overview'
+import { getAppList, getAppName, getHealthUrls } from './helpers'
 
 const dashboard = new Hono<{ Bindings: Env }>()
-
-/**
- * Get list of registered apps from KV
- */
-async function getAppList(c: any): Promise<string[]> {
-  if (!c.env.LOGS_KV) return []
-  const data = await c.env.LOGS_KV.get('apps')
-  if (!data) return []
-  return JSON.parse(data)
-}
-
-/**
- * Get app name from KV
- */
-async function getAppName(c: any, appId: string): Promise<string> {
-  if (!c.env.LOGS_KV) return appId
-  const data = await c.env.LOGS_KV.get(`app:${appId}`)
-  if (!data) return appId
-  const config = JSON.parse(data)
-  return config.name || appId
-}
-
-/**
- * Get health URLs from KV config
- */
-async function getHealthUrls(c: any, appId: string): Promise<string[]> {
-  if (!c.env.LOGS_KV) return []
-  const data = await c.env.LOGS_KV.get(`app:${appId}`)
-  if (!data) return []
-  const config = JSON.parse(data)
-  return config.health_urls || []
-}
 
 // Main dashboard entry - shows overview or login
 dashboard.get('/', async (c) => {

@@ -6,6 +6,7 @@ import type { Context } from 'hono'
 import type { Env, DailyStats, LogEntry } from '../../types'
 import type { OverviewResponse, AppSummary } from '../types'
 import { calculateTrend, determineHealthStatus } from '../components/charts'
+import { getAppList, getAppName } from '../helpers'
 
 /**
  * Get overview data for all apps
@@ -84,31 +85,6 @@ export async function getOverview(c: Context<{ Bindings: Env }>): Promise<Overvi
     totals,
     recent_errors,
   }
-}
-
-/**
- * Get list of registered app IDs
- */
-async function getAppList(c: Context<{ Bindings: Env }>): Promise<string[]> {
-  if (!c.env.LOGS_KV) return []
-
-  const data = await c.env.LOGS_KV.get('apps')
-  if (!data) return []
-
-  return JSON.parse(data)
-}
-
-/**
- * Get app name from KV
- */
-async function getAppName(c: Context<{ Bindings: Env }>, appId: string): Promise<string> {
-  if (!c.env.LOGS_KV) return appId
-
-  const data = await c.env.LOGS_KV.get(`app:${appId}`)
-  if (!data) return appId
-
-  const config = JSON.parse(data)
-  return config.name || appId
 }
 
 /**

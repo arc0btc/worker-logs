@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { Ok, Err, isOk, isErr, ErrorCode, getErrorStatus, ErrorStatusMap } from '../src/result'
+import { Ok, Err, ErrorCode, wrapError } from '../src/result'
 
 describe('Result utilities', () => {
   describe('Ok', () => {
@@ -34,18 +34,6 @@ describe('Result utilities', () => {
     })
   })
 
-  describe('Type guards', () => {
-    it('isOk correctly identifies Ok results', () => {
-      expect(isOk(Ok('test'))).toBe(true)
-      expect(isOk(Err({ code: 'ERROR', message: 'fail' }))).toBe(false)
-    })
-
-    it('isErr correctly identifies Err results', () => {
-      expect(isErr(Err({ code: 'ERROR', message: 'fail' }))).toBe(true)
-      expect(isErr(Ok('test'))).toBe(false)
-    })
-  })
-
   describe('Error codes', () => {
     it('has all expected error codes', () => {
       expect(ErrorCode.BAD_REQUEST).toBe('BAD_REQUEST')
@@ -59,29 +47,24 @@ describe('Result utilities', () => {
     })
   })
 
-  describe('getErrorStatus', () => {
-    it('maps error codes to HTTP status codes', () => {
-      expect(getErrorStatus({ code: ErrorCode.BAD_REQUEST, message: '' })).toBe(400)
-      expect(getErrorStatus({ code: ErrorCode.UNAUTHORIZED, message: '' })).toBe(401)
-      expect(getErrorStatus({ code: ErrorCode.FORBIDDEN, message: '' })).toBe(403)
-      expect(getErrorStatus({ code: ErrorCode.NOT_FOUND, message: '' })).toBe(404)
-      expect(getErrorStatus({ code: ErrorCode.VALIDATION_ERROR, message: '' })).toBe(422)
-      expect(getErrorStatus({ code: ErrorCode.INTERNAL_ERROR, message: '' })).toBe(500)
-      expect(getErrorStatus({ code: ErrorCode.NOT_IMPLEMENTED, message: '' })).toBe(501)
-      expect(getErrorStatus({ code: ErrorCode.SERVICE_UNAVAILABLE, message: '' })).toBe(503)
+  describe('wrapError', () => {
+    it('wraps Error instances with their message', () => {
+      const result = wrapError(new Error('Something went wrong'))
+      expect(result.ok).toBe(false)
+      expect(result.error.code).toBe('INTERNAL_ERROR')
+      expect(result.error.message).toBe('Something went wrong')
     })
 
-    it('defaults to 500 for unknown error codes', () => {
-      expect(getErrorStatus({ code: 'UNKNOWN_CODE', message: '' })).toBe(500)
+    it('wraps unknown values with default message', () => {
+      const result = wrapError('string error')
+      expect(result.ok).toBe(false)
+      expect(result.error.code).toBe('INTERNAL_ERROR')
+      expect(result.error.message).toBe('Unknown error')
     })
-  })
 
-  describe('ErrorStatusMap', () => {
-    it('contains correct mappings', () => {
-      expect(ErrorStatusMap[ErrorCode.BAD_REQUEST]).toBe(400)
-      expect(ErrorStatusMap[ErrorCode.UNAUTHORIZED]).toBe(401)
-      expect(ErrorStatusMap[ErrorCode.NOT_FOUND]).toBe(404)
-      expect(ErrorStatusMap[ErrorCode.INTERNAL_ERROR]).toBe(500)
+    it('wraps null/undefined with default message', () => {
+      expect(wrapError(null).error.message).toBe('Unknown error')
+      expect(wrapError(undefined).error.message).toBe('Unknown error')
     })
   })
 })

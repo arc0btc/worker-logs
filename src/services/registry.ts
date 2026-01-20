@@ -2,7 +2,7 @@
  * App Registry Service - manages app registrations in KV
  */
 
-import { Ok, Err, type Result, ErrorCode } from '../result'
+import { Ok, type Result, wrapError } from '../result'
 import type { AppConfig } from '../types'
 
 const APPS_KEY = 'apps'
@@ -29,8 +29,7 @@ export async function listApps(kv: KVNamespace): Promise<Result<string[]>> {
     }
     return Ok(JSON.parse(data) as string[])
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Unknown error'
-    return Err({ code: ErrorCode.INTERNAL_ERROR, message })
+    return wrapError(e)
   }
 }
 
@@ -48,8 +47,7 @@ export async function getApp(
     }
     return Ok(JSON.parse(data) as AppConfig)
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Unknown error'
-    return Err({ code: ErrorCode.INTERNAL_ERROR, message })
+    return wrapError(e)
   }
 }
 
@@ -101,8 +99,7 @@ export async function registerApp(
 
     return Ok(config)
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Unknown error'
-    return Err({ code: ErrorCode.INTERNAL_ERROR, message })
+    return wrapError(e)
   }
 }
 
@@ -127,66 +124,6 @@ export async function deleteApp(
 
     return Ok({ deleted: true })
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Unknown error'
-    return Err({ code: ErrorCode.INTERNAL_ERROR, message })
-  }
-}
-
-/**
- * Validate an API key and return the associated app ID
- */
-export async function validateApiKey(
-  kv: KVNamespace,
-  apiKey: string
-): Promise<Result<string | null>> {
-  try {
-    // List all apps and check their API keys
-    const appsResult = await listApps(kv)
-    if (!appsResult.ok) {
-      return appsResult
-    }
-
-    for (const appId of appsResult.data) {
-      const appResult = await getApp(kv, appId)
-      if (appResult.ok && appResult.data?.api_key === apiKey) {
-        return Ok(appId)
-      }
-    }
-
-    return Ok(null)
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'Unknown error'
-    return Err({ code: ErrorCode.INTERNAL_ERROR, message })
-  }
-}
-
-/**
- * Regenerate API key for an app
- */
-export async function regenerateApiKey(
-  kv: KVNamespace,
-  appId: string
-): Promise<Result<{ api_key: string }>> {
-  try {
-    const appResult = await getApp(kv, appId)
-    if (!appResult.ok) {
-      return appResult
-    }
-    if (!appResult.data) {
-      return Err({ code: ErrorCode.NOT_FOUND, message: `App '${appId}' not found` })
-    }
-
-    const newKey = generateApiKey()
-    const config: AppConfig = {
-      ...appResult.data,
-      api_key: newKey,
-    }
-
-    await kv.put(`${APP_PREFIX}${appId}`, JSON.stringify(config))
-
-    return Ok({ api_key: newKey })
-  } catch (e) {
-    const message = e instanceof Error ? e.message : 'Unknown error'
-    return Err({ code: ErrorCode.INTERNAL_ERROR, message })
+    return wrapError(e)
   }
 }
