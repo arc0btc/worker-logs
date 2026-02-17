@@ -6,9 +6,10 @@
   "compatibility_flags": ["nodejs_compat_v2"],
   "workers_dev": true,
   "preview_urls": true,
+  "account_id": "916093ba9c76cdc56aad0e16161675f1",
 
   // Custom domain route
-  "routes": [{ "pattern": "logs.wbd.host", "custom_domain": true }],
+  "routes": [{ "pattern": "logs.arc0btc.com", "custom_domain": true }],
 
   // Observability for debugging
   "observability": {
@@ -29,7 +30,8 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AppLogsDO"] }],
 
   // KV namespace for app registry and stats
+  // KV namespace for arc0btc account (created 2026-02-17)
   "kv_namespaces": [
-    { "binding": "LOGS_KV", "id": "6255715dc02c4829b7d7c2986a3bf63a" }
+    { "binding": "LOGS_KV", "id": "2ae7c3ed7c364a6b982993655a8d886c" }
   ]
 }
