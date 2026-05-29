@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
 import { Ok, Err, type Result, type ApiError, ErrorCode } from '../result'
+import { countByLevel } from '../utils'
 import type {
   Env,
   LogLevel,
@@ -142,12 +143,7 @@ export class AppLogsDO extends DurableObject<Env> {
       }
 
       // Tally counts by level and record stats in the same DO activation
-      const levelCounts = new Map<LogLevel, number>()
-      for (const entry of entries) {
-        levelCounts.set(entry.level, (levelCounts.get(entry.level) ?? 0) + 1)
-      }
-      const counts = Array.from(levelCounts.entries()).map(([level, count]) => ({ level, count }))
-      this.recordStatsBatch(counts)
+      this.recordStatsBatch(countByLevel(entries) as { level: LogLevel; count: number }[])
 
       return Ok(entries)
     } catch (e) {
