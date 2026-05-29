@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
 import { Ok, Err, type Result, type ApiError, ErrorCode } from '../result'
+import { countByLevel } from '../utils'
 import type {
   Env,
   LogLevel,
@@ -75,6 +76,7 @@ export class AppLogsDO extends DurableObject<Env> {
 
   /**
    * Log a single entry
+   * Stats are recorded atomically in the same DO activation — no separate /stats fetch needed.
    */
   async log(input: LogInput): Promise<Result<LogEntry>> {
     try {
@@ -98,6 +100,8 @@ export class AppLogsDO extends DurableObject<Env> {
         entry.request_id ?? null
       )
 
+      this.recordStats(entry.level)
+
       return Ok(entry)
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Unknown error'
@@ -107,6 +111,7 @@ export class AppLogsDO extends DurableObject<Env> {
 
   /**
    * Log multiple entries in a batch
+   * Stats are recorded atomically in the same DO activation — no separate /stats fetch needed.
    */
   async logBatch(inputs: LogInput[]): Promise<Result<LogEntry[]>> {
     try {
@@ -136,6 +141,9 @@ export class AppLogsDO extends DurableObject<Env> {
 
         entries.push(entry)
       }
+
+      // Tally counts by level and record stats in the same DO activation
+      this.recordStatsBatch(countByLevel(entries) as { level: LogLevel; count: number }[])
 
       return Ok(entries)
     } catch (e) {

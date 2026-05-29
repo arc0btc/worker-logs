@@ -7,7 +7,7 @@
 
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import type { Env, LogInput, LogEntry, QueryFilters, DailyStats } from './types'
-import { getAppDO, countByLevel } from './utils'
+import { getAppDO } from './utils'
 
 /**
  * RPC interface for worker-logs service binding.
@@ -40,15 +40,6 @@ export class LogsRPC extends WorkerEntrypoint<Env> {
 
     const result = await res.json() as { ok: boolean; data: LogEntry }
 
-    // Record stats in DO (atomic, no race condition)
-    if (result.ok) {
-      await stub.fetch(new Request('http://do/stats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ level: entry.level }),
-      }))
-    }
-
     return result.data
   }
 
@@ -65,16 +56,6 @@ export class LogsRPC extends WorkerEntrypoint<Env> {
     }))
 
     const result = await res.json() as { ok: boolean; data: { count: number } }
-
-    // Record stats in DO (atomic, no race condition)
-    if (result.ok) {
-      const counts = countByLevel(entries)
-      await stub.fetch(new Request('http://do/stats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ counts }),
-      }))
-    }
 
     return result.data
   }

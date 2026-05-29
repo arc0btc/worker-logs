@@ -5,7 +5,7 @@ import type { Env, LogInput, LogBatchInput } from './types'
 import * as registry from './services/registry'
 import { requireApiKey, requireAdminKey, requireApiKeyOrAdmin } from './middleware/auth'
 import { dashboard } from './dashboard/index'
-import { getAppDO, countByLevel } from './utils'
+import { getAppDO } from './utils'
 
 // Re-export AppLogsDO for wrangler to find
 export { AppLogsDO } from './durable-objects/app-logs-do'
@@ -65,17 +65,6 @@ app.post('/logs', requireApiKey, async (c) => {
       body: JSON.stringify(body),
     }))
     const result = await res.json() as { ok: boolean }
-
-    // Record stats in DO (atomic, no race condition)
-    if (result.ok) {
-      const counts = countByLevel(body.logs)
-      await stub.fetch(new Request('http://do/stats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ counts }),
-      }))
-    }
-
     return c.json(result)
   } else {
     const res = await stub.fetch(new Request('http://do/log', {
@@ -84,16 +73,6 @@ app.post('/logs', requireApiKey, async (c) => {
       body: JSON.stringify(body),
     }))
     const result = await res.json() as { ok: boolean }
-
-    // Record stats in DO (atomic, no race condition)
-    if (result.ok) {
-      await stub.fetch(new Request('http://do/stats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ level: body.level }),
-      }))
-    }
-
     return c.json(result)
   }
 })

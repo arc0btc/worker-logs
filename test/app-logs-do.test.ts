@@ -223,6 +223,66 @@ describe('AppLogsDO', () => {
     })
   })
 
+  describe('Stats auto-recorded on log write', () => {
+    it('POST /log increments daily_stats without a separate /stats call', async () => {
+      const stub = getStub('test-auto-stats-single')
+
+      // Write a single log — stats should be recorded inside the same DO activation
+      const logResponse = await stub.fetch(new Request('http://do/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level: 'WARN', message: 'Auto-stats test' }),
+      }))
+      expect(logResponse.status).toBe(200)
+
+      // Verify stats were updated — no separate /stats call was made
+      const statsResponse = await stub.fetch(new Request('http://do/stats?days=1', { method: 'GET' }))
+      expect(statsResponse.status).toBe(200)
+
+      const data = (await statsResponse.json()) as { ok: boolean; data: Array<{ date: string; warn: number; debug: number; info: number; error: number }> }
+      expect(data.ok).toBe(true)
+      const today = new Date().toISOString().split('T')[0]
+      const todayStats = data.data.find((s) => s.date === today)
+      expect(todayStats).toBeDefined()
+      expect(todayStats!.warn).toBe(1)
+      expect(todayStats!.debug).toBe(0)
+      expect(todayStats!.info).toBe(0)
+      expect(todayStats!.error).toBe(0)
+    })
+
+    it('POST /logs (batch) increments daily_stats without a separate /stats call', async () => {
+      const stub = getStub('test-auto-stats-batch')
+
+      // Write a batch — stats should be recorded inside the same DO activation
+      const logResponse = await stub.fetch(new Request('http://do/logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          logs: [
+            { level: 'INFO', message: 'Auto-stats batch 1' },
+            { level: 'INFO', message: 'Auto-stats batch 2' },
+            { level: 'ERROR', message: 'Auto-stats batch error' },
+          ],
+        }),
+      }))
+      expect(logResponse.status).toBe(200)
+
+      // Verify stats were updated — no separate /stats call was made
+      const statsResponse = await stub.fetch(new Request('http://do/stats?days=1', { method: 'GET' }))
+      expect(statsResponse.status).toBe(200)
+
+      const data = (await statsResponse.json()) as { ok: boolean; data: Array<{ date: string; info: number; error: number; debug: number; warn: number }> }
+      expect(data.ok).toBe(true)
+      const today = new Date().toISOString().split('T')[0]
+      const todayStats = data.data.find((s) => s.date === today)
+      expect(todayStats).toBeDefined()
+      expect(todayStats!.info).toBe(2)
+      expect(todayStats!.error).toBe(1)
+      expect(todayStats!.debug).toBe(0)
+      expect(todayStats!.warn).toBe(0)
+    })
+  })
+
   describe('Error handling', () => {
     it('returns 404 for unknown paths', async () => {
       const stub = getStub('test-errors')
